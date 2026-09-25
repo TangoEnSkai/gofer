@@ -1,0 +1,17 @@
+/gofer
+# Binaries
+/bin/
+/dist/
+*.test
+*.out
+
+# Local secrets and state
+.env
+.env.*
+!.env.example
+.gofer/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
