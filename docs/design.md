@@ -2,6 +2,8 @@
 
 Status: **Draft** · Owner: @TangoEnSkai
 
+Related: [roadmap](roadmap.md) · [toil tasks](toil-tasks.md) · [decisions](decisions/README.md)
+
 ## 1. Positioning
 
 gofer is a **lightweight errand runner for developers**. Full-featured coding
@@ -29,6 +31,8 @@ Non-goals: replacing a full IDE-grade coding agent, multi-platform support
 | Language | Go | Single binary, strong process control, author's primary language. |
 | Agent framework | [ADK for Go](https://github.com/google/adk-go) v2 (`google.golang.org/adk/v2`), version-pinned | Provides agent loop, sub-agents, callbacks, tool confirmation, MCP, DB sessions, compaction. v2 still has breaking changes, so upgrades land in dedicated PRs. |
 | Model | Gemini, default `gemini-flash-latest`, configurable | Cheap and fast for chores; free tier available. |
+| Routine shape | Gather in code, judge with the model | Fewer model calls, testable without a model ([ADR-0002](decisions/0002-gather-then-judge.md)). |
+| CLI | cobra; API key from env or macOS Keychain | Many subcommands; launchd has no shell env ([ADR-0004](decisions/0004-cli-and-credentials.md)). |
 | Auth | Gemini API key from Google AI Studio (`GEMINI_API_KEY`); Vertex AI optional later | Free tier, no GCP billing setup. See §7 for the data-use caveat. |
 | Platform | macOS only | Enables `sandbox-exec`, launchd, APFS clones, native notifications. |
 | UI | Headless + line REPL first; Bubble Tea TUI in M5 | Ship value early; TUI is polish. |
@@ -69,7 +73,7 @@ Non-goals: replacing a full IDE-grade coding agent, multi-platform support
 ### Package layout (planned)
 
 ```
-cmd/gofer/            CLI entry point (cobra or stdlib flag)
+cmd/gofer/            CLI entry point (cobra)
 internal/agent/       root agent, prompts, model construction
 internal/tools/       fs, edit, search, shell, git, gh, web, delegate
 internal/policy/      permission rules, profiles, confirmation bridge
@@ -80,6 +84,7 @@ internal/routine/     routine specs, launchd plist generation, run history
 internal/mcpserver/   gofer-as-MCP-server
 internal/config/      config loading (~/.config/gofer/config.toml)
 internal/ui/          line REPL now, Bubble Tea TUI later
+internal/adkcontract/ tests pinning the ADK behaviour gofer relies on
 ```
 
 ## 4. Mapping to ADK
@@ -94,10 +99,12 @@ internal/ui/          line REPL now, Bubble Tea TUI later
 | Sessions | `session/database` | SQLite under `~/.local/state/gofer`. |
 | Compaction | `session/compaction` | LLM summarizer. |
 | Skills | `tool/skilltoolset` | Candidate for reusable routine recipes. |
-| Model | `model/gemini` | `model.LLM` interface allows other providers later. |
+| Model | `model/gemini` | `model.LLM` interface allows other providers later. No built-in retry on 429, so gofer wraps it with a limiter. |
+| Routines / parallel gather | `workflow` (function, agent, parallel, retry nodes) | Adopted only if the M0 spike says go. |
 
-Built outside ADK: orchestrator, workspace isolation, sandbox, routines/launchd,
-delegation, MCP server mode, UI.
+Built outside ADK: workspace isolation, sandbox, launchd integration, rate
+limiting, delegation, MCP server mode, UI — and the orchestrator too, if the
+`workflow` package does not pass the spike.
 
 ## 5. Parallel tasks and isolation
 
@@ -118,17 +125,24 @@ Alternatives considered: containers (heavy on macOS, not needed for chores) and
 
 ## 6. Routines
 
-A routine is a YAML spec:
+A routine is a **gather-then-judge** pipeline described by a YAML spec
+([ADR-0002](decisions/0002-gather-then-judge.md)):
 
 ```yaml
 name: morning-pr-digest
 schedule: "0 9 * * 1-5"      # cron syntax, translated to launchd StartCalendarInterval
 workdir: ~/ws/github
-profile: readonly            # permission profile
-prompt: |
-  Summarize CI and review status of my open PRs and notify me.
+profile: readonly            # only read-only tools are registered
+gather:                      # deterministic steps, run in parallel, no model calls
+  - gh: search prs --author @me --state open
+  - gh: pr checks {{each.url}}
+prompt: |                    # single judge step over the gathered data
+  Classify each PR by what it needs today and write a short digest.
 notify: always               # always | on-failure | never
 ```
+
+In v0.1.0 routines are **read-only by construction**: write-capable tools are
+not registered for unattended runs ([ADR-0003](decisions/0003-read-only-routines-first.md)).
 
 `gofer routine add` writes `~/Library/LaunchAgents/dev.gofer.<name>.plist`
 that invokes `gofer routine run <name>`. Runs are non-interactive: any tool call
@@ -158,16 +172,11 @@ per run and surfaced via macOS notifications.
 
 ## 9. Milestones
 
-| Milestone | Deliverable |
-|---|---|
-| M1 Agent Core MVP | Agent loop, core tools, headless + REPL, sessions, toil task list |
-| M2 Safety | Permission engine, sandbox-exec, checkpoints/undo, redaction |
-| M3 Parallel & Routines | Orchestrator, workspace isolation, routines on launchd |
-| M4 Hybrid | `delegate` tool, MCP server mode |
-| M5 TUI & Release | Bubble Tea TUI, eval suite, goreleaser + Homebrew tap |
+See [roadmap.md](roadmap.md). Milestones are vertical slices that each end
+in a scenario demo: M0 Spike → M1 First Errand → M2 Daily Driver (v0.1.0) →
+M3 Safe Writes (v0.2.0) → M4 Hybrid (v0.3.0) → M5 Polish (v1.0.0).
 
 ## 10. Open questions
 
-- Representative toil tasks (#14) — will shape the tool set and evals.
-- CLI framework: stdlib `flag` vs. cobra.
+- ADK `workflow` as the routine/parallel engine — decided by the M0 spike (#17).
 - Whether to use ADK `skilltoolset` as the format for reusable routine recipes.
