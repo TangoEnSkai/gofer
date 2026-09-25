@@ -4,6 +4,7 @@ go 1.26.6
 
 require (
 	github.com/BurntSushi/toml v1.6.0
+	github.com/bmatcuk/doublestar/v4 v4.10.2
 	github.com/glebarez/sqlite v1.11.0
 	github.com/spf13/cobra v1.10.2
 	google.golang.org/adk/v2 v2.4.0
