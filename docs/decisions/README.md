@@ -31,3 +31,4 @@ irreversible, or conflict with a constraint go to the owner first.
 | [0002](0002-gather-then-judge.md) | Routines gather in code, judge with the model | Accepted |
 | [0003](0003-read-only-routines-first.md) | Ship read-only routines before the safety layer | Accepted |
 | [0004](0004-cli-and-credentials.md) | cobra CLI and Keychain-backed credentials | Accepted |
+| [0005](0005-adopt-adk-workflow.md) | Adopt ADK `workflow` for routines; gather errors are data | Accepted |
