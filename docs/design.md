@@ -79,13 +79,19 @@ internal/agent/       root agent, prompts, model construction
 internal/tools/       fs, edit, search, shell, git, gh, web, delegate
 internal/policy/      permission rules, profiles, confirmation bridge
 internal/sandbox/     sandbox-exec profile generation and exec wrapper
-internal/workspace/   in-place / worktree / APFS clone isolation
-internal/orchestrator/task queue, worker pool, aggregation
-internal/routine/     routine specs, launchd plist generation, run history
+internal/workspace/   in-place / worktree / APFS clone isolation (M3)
 internal/mcpserver/   gofer-as-MCP-server
 internal/config/      config loading (~/.config/gofer/config.toml)
+internal/credentials/ API key resolution: env → macOS Keychain (ADR-0004)
+internal/app/         composition root: mode → tools, model, agent, sessions
+internal/ratelimit/   shared requests-per-minute limiter for models
+internal/routine/     routine specs, gatherer registry, gather-then-judge runner
+internal/launchd/     cron subset → launchd plists, launchctl bootstrap/bootout
+internal/runs/        run history store
+internal/notify/      macOS notifications and notify policy
 internal/ui/          line REPL now, Bubble Tea TUI later
 internal/adkcontract/ tests pinning the ADK behaviour gofer relies on
+internal/llmtest/     scripted model.LLM for tests (no API key in CI)
 ```
 
 ## 4. Mapping to ADK
