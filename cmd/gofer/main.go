@@ -3,17 +3,28 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
+
+	"github.com/spf13/cobra"
 )
 
 // version is overridden at build time via -ldflags "-X main.version=...".
 var version = "dev"
 
 func main() {
-	if len(os.Args) > 1 && (os.Args[1] == "version" || os.Args[1] == "--version") {
-		fmt.Println("gofer", version)
-		return
+	os.Exit(run(newRootCmd(), os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run executes cmd with args and returns the process exit code. Errors are
+// printed once, as "gofer: <err>", to stderr.
+func run(cmd *cobra.Command, args []string, stdout, stderr io.Writer) int {
+	cmd.SetArgs(args)
+	cmd.SetOut(stdout)
+	cmd.SetErr(stderr)
+	if err := cmd.Execute(); err != nil {
+		fmt.Fprintln(stderr, "gofer:", err)
+		return 1
 	}
-	fmt.Fprintln(os.Stderr, "gofer: not implemented yet — see docs/design.md")
-	os.Exit(1)
+	return 0
 }
