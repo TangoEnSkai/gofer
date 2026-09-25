@@ -93,6 +93,27 @@ compacted summaries could carry unredacted secrets.
   tool and callback contexts were merged). The contract tests are the upgrade
   gate: bump the pinned version in a dedicated PR and fix what they flag.
 
+## Addendum: findings during M1 implementation
+
+Found while building `internal/agent` (#9, PR #31); both are covered by tests
+in `internal/agent`.
+
+- **`llmagent.Config.Instruction` is a template.** Any `{identifier}` is
+  substituted from session state and a missing key fails the turn
+  (`failed to inject session state into instruction`). Project instructions
+  (AGENTS.md) routinely contain braces, so gofer always passes instructions
+  through `InstructionProvider`, which ADK does not template. The same applies
+  to routine judge instructions.
+- **Parallel confirmations must be answered in one message.** If one model turn
+  triggers N confirmations and only one answer is sent, ADK resumes the model
+  immediately and the remaining calls stay unanswered, costing an extra model
+  call. `agent.ConfirmAll` sends all `FunctionResponse`s together (ADK's own
+  console launcher does the same).
+- **A paused run** emits a placeholder function response with the error
+  `requires confirmation, please approve or reject`, then the model-role
+  `adk_request_confirmation` call with `LongRunningToolIDs` set. On rejection
+  the model sees `error tool "<name>" call is rejected`.
+
 ## Follow-ups
 
 - #28 — run Q5 once `GEMINI_API_KEY` is available.

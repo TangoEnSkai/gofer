@@ -29,10 +29,31 @@ go install github.com/TangoEnSkai/gofer/cmd/gofer@latest
 
 ## Configuration
 
-gofer uses the Gemini API via [Google AI Studio](https://aistudio.google.com/apikey):
+### API key
+
+gofer uses the Gemini API via [Google AI Studio](https://aistudio.google.com/apikey).
+The key is looked up in this order: `GEMINI_API_KEY`, `GOOGLE_API_KEY`, then the
+macOS Keychain. The Keychain is recommended because scheduled routines run under
+launchd, which does not load your shell profile:
 
 ```sh
-export GEMINI_API_KEY=...
+security add-generic-password -s gofer -a gemini -w   # prompts for the key
+gofer doctor                                          # shows where the key was found, never the key
+```
+
+### Config file
+
+Optional, at `~/.config/gofer/config.toml` (or `$XDG_CONFIG_HOME/gofer/config.toml`).
+Unknown keys are rejected so that a typo cannot silently disable a setting.
+
+```toml
+model = "gemini-flash-latest"
+
+# Directories whose contents must never be sent to the model.
+deny_dirs = ["~/work"]
+
+[limits]
+requests_per_minute = 10
 ```
 
 > [!WARNING]
