@@ -1,6 +1,6 @@
 # ADR-0002: Routines gather in code, judge with the model
 
-- Status: Accepted
+- Status: Accepted · judge tools narrowed for v0.1.0 by [ADR-0007](0007-gatherers-are-go-code.md)
 - Date: 2026-09-26
 
 ## Context

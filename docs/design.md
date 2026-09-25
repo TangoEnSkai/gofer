@@ -2,7 +2,8 @@
 
 Status: **Draft** · Owner: @TangoEnSkai
 
-Related: [roadmap](roadmap.md) · [toil tasks](toil-tasks.md) · [decisions](decisions/README.md)
+Related: [roadmap](roadmap.md) · [toil tasks](toil-tasks.md) · [decisions](decisions/README.md) ·
+specs: [CLI modes & sessions](specs/cli-modes.md), [routines](specs/routines.md)
 
 ## 1. Positioning
 
@@ -132,13 +133,14 @@ name: morning-pr-digest
 schedule: "0 9 * * 1-5"      # cron syntax, translated to launchd StartCalendarInterval
 workdir: ~/ws/github
 profile: readonly            # only read-only tools are registered
-gather:                      # deterministic steps, run in parallel, no model calls
-  - gh: search prs --author @me --state open
-  - gh: pr checks {{each.url}}
-prompt: |                    # single judge step over the gathered data
-  Classify each PR by what it needs today and write a short digest.
+gatherer: github.my_open_prs # registered Go gatherer, no templating (ADR-0007)
+with: { limit: 50 }
+prompt: |                    # optional extra guidance for the single judge step
+  Prioritise PRs in databricks/* repos.
 notify: always               # always | on-failure | never
 ```
+
+Full specification: [specs/routines.md](specs/routines.md).
 
 In v0.1.0 routines are **read-only by construction**: write-capable tools are
 not registered for unattended runs ([ADR-0003](decisions/0003-read-only-routines-first.md)).
