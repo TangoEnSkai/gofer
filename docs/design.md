@@ -99,12 +99,11 @@ internal/adkcontract/ tests pinning the ADK behaviour gofer relies on
 | Sessions | `session/database` | SQLite under `~/.local/state/gofer`. |
 | Compaction | `session/compaction` | LLM summarizer. |
 | Skills | `tool/skilltoolset` | Candidate for reusable routine recipes. |
-| Model | `model/gemini` | `model.LLM` interface allows other providers later. No built-in retry on 429, so gofer wraps it with a limiter. |
-| Routines / parallel gather | `workflow` (function, agent, parallel, retry nodes) | Adopted only if the M0 spike says go. |
+| Model | `model/gemini` | `model.LLM` interface allows other providers later. genai HTTP retries are off by default; gofer enables `RetryOptions` and adds a requests-per-minute limiter. |
+| Routines / parallel gather | `workflow` (function, agent, parallel, retry nodes) | Adopted ([ADR-0005](decisions/0005-adopt-adk-workflow.md)); per-item failures are returned as data because `ParallelWorker` is fail-fast. |
 
 Built outside ADK: workspace isolation, sandbox, launchd integration, rate
-limiting, delegation, MCP server mode, UI — and the orchestrator too, if the
-`workflow` package does not pass the spike.
+limiting, delegation, MCP server mode, UI.
 
 ## 5. Parallel tasks and isolation
 
@@ -178,5 +177,4 @@ M3 Safe Writes (v0.2.0) → M4 Hybrid (v0.3.0) → M5 Polish (v1.0.0).
 
 ## 10. Open questions
 
-- ADK `workflow` as the routine/parallel engine — decided by the M0 spike (#17).
 - Whether to use ADK `skilltoolset` as the format for reusable routine recipes.

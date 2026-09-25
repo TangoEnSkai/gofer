@@ -6,7 +6,7 @@ milestone have task issues ([ADR-0001](decisions/0001-value-first-roadmap.md)).
 
 | Milestone | Goal | Done when | Release |
 |---|---|---|---|
-| [M0 Spike](https://github.com/TangoEnSkai/gofer/milestone/6) | Validate ADK for Go v2 | `docs/spikes/adk-v2.md` written; contract tests in CI; go/no-go on `workflow` | — |
+| [M0 Spike](https://github.com/TangoEnSkai/gofer/milestone/6) | Validate ADK for Go v2 | ✅ [Go](spikes/adk-v2.md): contract tests in CI; `workflow` adopted ([ADR-0005](decisions/0005-adopt-adk-workflow.md)); live check moved to #28 | — |
 | [M1 First Errand](https://github.com/TangoEnSkai/gofer/milestone/1) | Interactive agent with core and `gh` read tools | `gofer -p "summarize my open PRs"` works against real Gemini | — |
 | [M2 Daily Driver](https://github.com/TangoEnSkai/gofer/milestone/2) | Read-only routines, parallel gather, launchd | S1 runs unattended every weekday | v0.1.0 |
 | [M3 Safe Writes](https://github.com/TangoEnSkai/gofer/milestone/3) | Permissions, sandbox, checkpoints, worktree isolation | S2 | v0.2.0 |
