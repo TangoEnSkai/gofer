@@ -304,3 +304,34 @@ func TestAskStreaming(t *testing.T) {
 		}
 	}
 }
+
+// WithCompaction replaces older turns with a summary written by the agent's
+// own model; without it, every turn is sent again.
+func TestWithCompaction(t *testing.T) {
+	for _, interval := range []int{0, 2} {
+		replies := []llmtest.Reply{llmtest.Text("ack one"), llmtest.Text("ack two")}
+		if interval > 0 {
+			replies = append(replies, llmtest.Text("SUMMARY-OF-EARLIER-TURNS"))
+		}
+		m := llmtest.New(append(replies, llmtest.Text("ack three"))...)
+		a, err := New(Options{Model: m})
+		if err != nil {
+			t.Fatal(err)
+		}
+		r, err := NewRunner(a, nil, WithCompaction(interval))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, prompt := range []string{"turn one", "turn two", "turn three"} {
+			if _, err := Ask(context.Background(), r, user, sess, prompt, nil); err != nil {
+				t.Fatalf("interval %d: %v", interval, err)
+			}
+		}
+		reqs := m.Requests()
+		last := llmtest.Transcript(reqs[len(reqs)-1])
+		compacted := strings.Contains(last, "SUMMARY-OF-EARLIER-TURNS") && !strings.Contains(last, "turn one")
+		if compacted != (interval > 0) {
+			t.Errorf("interval %d: compacted = %v; last request:\n%s", interval, compacted, last)
+		}
+	}
+}

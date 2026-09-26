@@ -19,12 +19,13 @@ import (
 const secret = "AIza-test-secret-value"
 
 // testApp returns an app with a fake API key and a logged-in gh, whose
-// default config path is an empty temp dir. Its streams are not terminals,
-// stdin is empty, model requests are not rate limited, and building a model
-// fails until a test sets one.
+// default config path and session store are in empty temp dirs. Its streams
+// are not terminals, stdin is empty, model requests are not rate limited, and
+// building a model fails until a test sets one.
 func testApp(t *testing.T) *app {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
 	return &app{
 		resolveCredential: func(context.Context) (credentials.Credential, error) {
 			return credentials.Credential{Key: secret, Source: credentials.SourceGeminiEnv}, nil
@@ -71,13 +72,17 @@ func TestRootUsageErrors(t *testing.T) {
 		args []string
 		want string
 	}{
-		"no prompt":        {nil, "no prompt: pass -p"},
-		"missing --config": {[]string{"-p", "hi", "--config", filepath.Join(t.TempDir(), "nope.toml")}, "no such file"},
-		"invalid config":   {[]string{"-p", "hi", "--config", writeConfig(t, "model = ")}, "config.toml"},
-		"unknown command":  {[]string{"frobnicate"}, `unknown command "frobnicate"`},
-		"unknown flag":     {[]string{"--nope"}, "unknown flag: --nope"},
-		"subcommand flag":  {[]string{"version", "--nope"}, "unknown flag: --nope"},
-		"invalid output":   {[]string{"-p", "hi", "--output", "yaml"}, `invalid --output "yaml"`},
+		"no prompt":            {nil, "no prompt: pass -p"},
+		"missing --config":     {[]string{"-p", "hi", "--config", filepath.Join(t.TempDir(), "nope.toml")}, "no such file"},
+		"invalid config":       {[]string{"-p", "hi", "--config", writeConfig(t, "model = ")}, "config.toml"},
+		"unknown command":      {[]string{"frobnicate"}, `unknown command "frobnicate"`},
+		"unknown flag":         {[]string{"--nope"}, "unknown flag: --nope"},
+		"subcommand flag":      {[]string{"version", "--nope"}, "unknown flag: --nope"},
+		"invalid output":       {[]string{"-p", "hi", "--output", "yaml"}, `invalid --output "yaml"`},
+		"continue and resume":  {[]string{"-p", "hi", "-c", "--resume", "x"}, "--continue and --resume cannot be used together"},
+		"force without resume": {[]string{"-p", "hi", "--force-workdir"}, "--force-workdir only applies to --resume"},
+		"empty resume":         {[]string{"-p", "hi", "--resume", ""}, "--resume needs a session ID"},
+		"sessions extra arg":   {[]string{"sessions", "list", "x"}, `unknown command "x"`},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
