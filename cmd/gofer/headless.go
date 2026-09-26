@@ -82,7 +82,16 @@ func (u *usage) add(m *genai.GenerateContentResponseUsageMetadata) {
 // headless runs one prompt without prompting anyone (docs/specs/cli-modes.md
 // §3). A confirmation request is rejected and makes the run exit with 3.
 func (a *app) headless(ctx context.Context, cfg config.Config, hasPrompt bool, stdout, stderr io.Writer) error {
-	ga, err := a.build(ctx, cfg, goferapp.Headless)
+	store, err := openSessions(ctx, stderr)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	ga, err := a.build(ctx, cfg, goferapp.Headless, store.Service)
+	if err != nil {
+		return err
+	}
+	sid, err := a.resumeTarget(ctx, store, ga.Workdir, stderr)
 	if err != nil {
 		return err
 	}
@@ -103,9 +112,10 @@ func (a *app) headless(ctx context.Context, cfg config.Config, hasPrompt bool, s
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	sid, err := ga.NewSession(ctx)
-	if err != nil {
-		return err
+	if sid == "" {
+		if sid, err = ga.CreateSession(ctx, "", prompt); err != nil {
+			return err
+		}
 	}
 
 	h := &headlessRun{out: stdout, format: a.output, result: headlessResult{SessionID: sid}}

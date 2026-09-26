@@ -22,6 +22,7 @@ import (
 	"github.com/TangoEnSkai/gofer/internal/config"
 	"github.com/TangoEnSkai/gofer/internal/credentials"
 	"github.com/TangoEnSkai/gofer/internal/ratelimit"
+	"github.com/TangoEnSkai/gofer/internal/sessions"
 	"github.com/TangoEnSkai/gofer/internal/tools/fs"
 	"github.com/TangoEnSkai/gofer/internal/tools/gh"
 	"github.com/TangoEnSkai/gofer/internal/tools/shell"
@@ -54,7 +55,12 @@ func (m Mode) String() string {
 }
 
 // UserID is the ADK user that owns gofer's sessions. gofer is single-user.
-const UserID = "local"
+const UserID = sessions.UserID
+
+// InteractiveCompactionInterval is how many user turns of an interactive
+// session pass between context compactions (docs/spikes/adk-v2.md Q6).
+// Headless and routine runs are one-shot and never compact.
+const InteractiveCompactionInterval = 10
 
 // ErrDeniedDir is wrapped by errors for a workdir inside a deny_dirs entry.
 var ErrDeniedDir = errors.New("it is inside a deny_dirs entry of the config")
@@ -98,8 +104,11 @@ type BuildOptions struct {
 	// AllowWrites registers write and shell tools without confirmation. Only
 	// headless mode accepts it (--allow-writes).
 	AllowWrites bool
-	// Sessions stores sessions. Nil selects session.InMemoryService().
+	// Sessions stores sessions. Nil selects session.InMemoryService(); the
+	// CLI passes a sessions.Store's service so sessions can be resumed.
 	Sessions session.Service
+	// Version is the gofer version recorded in the sessions the app creates.
+	Version string
 	// ResolveCredential returns the Gemini API key. Nil means
 	// credentials.Resolve.
 	ResolveCredential func(context.Context) (credentials.Credential, error)
@@ -124,7 +133,11 @@ type App struct {
 	Sessions session.Service
 	Agent    adkagent.Agent
 	Runner   *runner.Runner
+	// CompactionInterval is how many user turns pass between context
+	// compactions; 0 means never. Build sets it from the mode.
+	CompactionInterval int
 
+	version  string
 	model    model.LLM
 	newModel func(ctx context.Context, name string) (model.LLM, error)
 }
@@ -182,15 +195,16 @@ func Build(ctx context.Context, cfg config.Config, mode Mode, opts BuildOptions)
 	if err != nil {
 		return nil, err
 	}
-	sessions := opts.Sessions
-	if sessions == nil {
-		sessions = session.InMemoryService()
+	svc := opts.Sessions
+	if svc == nil {
+		svc = session.InMemoryService()
 	}
 	a := &App{
 		Mode:     mode,
 		Workdir:  dir,
 		Tools:    tools,
-		Sessions: sessions,
+		Sessions: svc,
+		version:  opts.Version,
 		// The closure keeps the key out of App's fields and printed values.
 		newModel: func(ctx context.Context, name string) (model.LLM, error) {
 			m, err := newModel(ctx, name, cred.Key)
@@ -199,6 +213,9 @@ func Build(ctx context.Context, cfg config.Config, mode Mode, opts BuildOptions)
 			}
 			return ratelimit.Wrap(m, limiter), nil
 		},
+	}
+	if mode == Interactive {
+		a.CompactionInterval = InteractiveCompactionInterval
 	}
 	if err := a.SetModel(ctx, cfg.Model); err != nil {
 		return nil, err
@@ -261,7 +278,7 @@ func (a *App) SetModel(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
-	r, err := agent.NewRunner(ag, a.Sessions)
+	r, err := agent.NewRunner(ag, a.Sessions, agent.WithCompaction(a.CompactionInterval))
 	if err != nil {
 		return err
 	}
@@ -269,9 +286,27 @@ func (a *App) SetModel(ctx context.Context, name string) error {
 	return nil
 }
 
-// NewSession creates an empty session and returns its ID.
+// NewSession creates a session without a first message and returns its ID.
 func (a *App) NewSession(ctx context.Context) (string, error) {
-	resp, err := a.Sessions.Create(ctx, &session.CreateRequest{AppName: agent.Name, UserID: UserID})
+	return a.CreateSession(ctx, "", "")
+}
+
+// CreateSession creates the session id, or one with a new ID when id is
+// empty, and returns its ID. The session records the workdir, the mode, the
+// gofer version, and firstMessage, the user's first message, so that it can
+// be found and listed later (docs/specs/cli-modes.md §6).
+func (a *App) CreateSession(ctx context.Context, id, firstMessage string) (string, error) {
+	workdir, err := sessions.Workdir(a.Workdir)
+	if err != nil {
+		return "", fmt.Errorf("create session: %w", err)
+	}
+	meta := sessions.Meta{Workdir: workdir, Mode: a.Mode.String(), Version: a.version, FirstMessage: firstMessage}
+	resp, err := a.Sessions.Create(ctx, &session.CreateRequest{
+		AppName:   agent.Name,
+		UserID:    UserID,
+		SessionID: id,
+		State:     meta.State(),
+	})
 	if err != nil {
 		return "", fmt.Errorf("create session: %w", err)
 	}
