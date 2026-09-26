@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	goferapp "github.com/TangoEnSkai/gofer/internal/app"
 	"github.com/TangoEnSkai/gofer/internal/config"
 )
 
@@ -14,12 +15,5 @@ func checkWorkdir(cfg config.Config) error {
 	if err != nil {
 		return fmt.Errorf("get working directory: %w", err)
 	}
-	denied, err := cfg.IsDenied(dir)
-	if err != nil {
-		return fmt.Errorf("check deny_dirs for %s: %w", dir, err)
-	}
-	if denied {
-		return fmt.Errorf("refusing to run in %s: it is inside a deny_dirs entry of the config", dir)
-	}
-	return nil
+	return goferapp.CheckWorkdir(cfg, dir)
 }

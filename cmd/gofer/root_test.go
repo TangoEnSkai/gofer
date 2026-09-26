@@ -3,18 +3,25 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"golang.org/x/time/rate"
+	"google.golang.org/adk/v2/model"
+
+	goferapp "github.com/TangoEnSkai/gofer/internal/app"
 	"github.com/TangoEnSkai/gofer/internal/credentials"
 )
 
 const secret = "AIza-test-secret-value"
 
 // testApp returns an app with a fake API key and a logged-in gh, whose
-// default config path is an empty temp dir.
+// default config path is an empty temp dir. Its streams are not terminals,
+// stdin is empty, model requests are not rate limited, and building a model
+// fails until a test sets one.
 func testApp(t *testing.T) *app {
 	t.Helper()
 	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
@@ -23,6 +30,13 @@ func testApp(t *testing.T) *app {
 			return credentials.Credential{Key: secret, Source: credentials.SourceGeminiEnv}, nil
 		},
 		ghAuthStatus: func(context.Context) error { return nil },
+		newModel: func(context.Context, string, string) (model.LLM, error) {
+			return nil, errors.New("no model in this test")
+		},
+		buildApp:   goferapp.Build,
+		limiter:    rate.NewLimiter(rate.Inf, 0),
+		stdin:      strings.NewReader(""),
+		interrupts: func() (<-chan os.Signal, func()) { return nil, func() {} },
 	}
 }
 
@@ -51,45 +65,25 @@ func writeConfig(t *testing.T, body string) string {
 	return path
 }
 
-func TestRootNotImplemented(t *testing.T) {
-	stdout, stderr, code := execute(t, testApp(t))
-	if code != 1 {
-		t.Errorf("exit code = %d, want 1", code)
-	}
-	if stdout != "" {
-		t.Errorf("stdout = %q, want empty", stdout)
-	}
-	if want := "gofer: interactive mode not implemented yet (#12)\n"; stderr != want {
-		t.Errorf("stderr = %q, want %q", stderr, want)
-	}
-}
-
-func TestRootRefusesDeniedDir(t *testing.T) {
-	dir := t.TempDir()
-	t.Chdir(dir)
-	cfg := writeConfig(t, "deny_dirs = ["+quote(dir)+"]")
-
-	_, stderr, code := execute(t, testApp(t), "--config", cfg)
-	if code != 1 || !strings.Contains(stderr, "refusing to run in") {
-		t.Errorf("exit code = %d, stderr = %q; want 1 and a refusal", code, stderr)
-	}
-}
-
-func TestRootErrors(t *testing.T) {
+// Usage and config errors exit with 2 (docs/specs/cli-modes.md §3).
+func TestRootUsageErrors(t *testing.T) {
 	tests := map[string]struct {
 		args []string
 		want string
 	}{
-		"missing --config": {[]string{"--config", filepath.Join(t.TempDir(), "nope.toml")}, "no such file"},
-		"invalid config":   {[]string{"--config", writeConfig(t, "model = ")}, "config.toml"},
+		"no prompt":        {nil, "no prompt: pass -p"},
+		"missing --config": {[]string{"-p", "hi", "--config", filepath.Join(t.TempDir(), "nope.toml")}, "no such file"},
+		"invalid config":   {[]string{"-p", "hi", "--config", writeConfig(t, "model = ")}, "config.toml"},
 		"unknown command":  {[]string{"frobnicate"}, `unknown command "frobnicate"`},
 		"unknown flag":     {[]string{"--nope"}, "unknown flag: --nope"},
+		"subcommand flag":  {[]string{"version", "--nope"}, "unknown flag: --nope"},
+		"invalid output":   {[]string{"-p", "hi", "--output", "yaml"}, `invalid --output "yaml"`},
 	}
 	for name, tt := range tests {
 		t.Run(name, func(t *testing.T) {
-			_, stderr, code := execute(t, testApp(t), tt.args...)
-			if code != 1 || !strings.HasPrefix(stderr, "gofer: ") || !strings.Contains(stderr, tt.want) {
-				t.Errorf("exit code = %d, stderr = %q; want 1 and %q", code, stderr, tt.want)
+			stdout, stderr, code := execute(t, testApp(t), tt.args...)
+			if code != exitUsage || stdout != "" || !strings.HasPrefix(stderr, "gofer: ") || !strings.Contains(stderr, tt.want) {
+				t.Errorf("exit code = %d, stdout = %q, stderr = %q; want 2, empty, and %q", code, stdout, stderr, tt.want)
 			}
 		})
 	}
