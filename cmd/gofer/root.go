@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 	"golang.org/x/time/rate"
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/session"
 
 	"github.com/TangoEnSkai/gofer/internal/agent"
 	goferapp "github.com/TangoEnSkai/gofer/internal/app"
@@ -28,6 +29,10 @@ type app struct {
 	prompt      string // -p, --prompt
 	output      string // --output
 	allowWrites bool   // --allow-writes
+	// Session selection; see resumeTarget.
+	continueLast bool   // -c, --continue
+	resume       string // --resume
+	forceWorkdir bool   // --force-workdir
 
 	resolveCredential func(context.Context) (credentials.Credential, error)
 	ghAuthStatus      func(context.Context) error
@@ -61,10 +66,13 @@ func newRootCmdFor(a *app) *cobra.Command {
 			"With -p, or with input piped to stdin, it runs one prompt and exits (headless\n" +
 			"mode): piped input is appended to the -p prompt, or is the prompt without -p.\n" +
 			"Headless runs can only read files and query GitHub unless --allow-writes is set.\n\n" +
+			"Sessions are saved: --continue resumes the latest one of the current directory,\n" +
+			"and --resume <id> any other (see gofer sessions list), in either mode.\n\n" +
 			"Exit codes: 0 ok, 1 runtime error, 2 usage or config error (including no API\n" +
 			"key and a denied directory), 3 a tool call needed a confirmation that headless\n" +
 			"mode cannot give.",
 		Example: "  gofer\n" +
+			"  gofer --continue\n" +
 			"  gofer -p \"summarize my open PRs\"\n" +
 			"  git diff | gofer -p \"write a commit message for this diff\"\n" +
 			"  gofer -p \"...\" --output json",
@@ -92,6 +100,11 @@ func newRootCmdFor(a *app) *cobra.Command {
 	lf.StringVarP(&a.prompt, "prompt", "p", "", "run this prompt once and exit (headless mode)")
 	lf.StringVar(&a.output, "output", outputText, "headless output format: text, json, or stream-json")
 	lf.BoolVar(&a.allowWrites, "allow-writes", false, "headless: register write_file, edit_file, and bash, running them without confirmation")
+	lf.BoolVarP(&a.continueLast, "continue", "c", false, "resume the most recent session of the current directory")
+	lf.StringVar(&a.resume, "resume", "", "resume the session with this ID (see gofer sessions list)")
+	lf.BoolVar(&a.forceWorkdir, "force-workdir", false, "with --resume, resume a session started in another directory")
+
+	cmd.AddCommand(newSessionsCmd())
 
 	cmd.AddCommand(newVersionCmd(), newDoctorCmd(a))
 	return cmd
@@ -103,6 +116,9 @@ func (a *app) root(cmd *cobra.Command) error {
 	case outputText, outputJSON, outputStreamJSON:
 	default:
 		return usageError(fmt.Errorf("invalid --output %q: want %s, %s, or %s", a.output, outputText, outputJSON, outputStreamJSON))
+	}
+	if err := a.checkResumeFlags(cmd); err != nil {
+		return err
 	}
 	hasPrompt := cmd.Flags().Changed("prompt")
 	mode := detectMode(hasPrompt, a.term)
@@ -122,11 +138,14 @@ func (a *app) root(cmd *cobra.Command) error {
 	return a.headless(cmd.Context(), cfg, hasPrompt, cmd.OutOrStdout(), cmd.ErrOrStderr())
 }
 
-// build wires the app for mode. It refuses a denied workdir before anything
-// else, and maps config problems to exit code 2.
-func (a *app) build(ctx context.Context, cfg config.Config, mode goferapp.Mode) (*goferapp.App, error) {
+// build wires the app for mode with sessions stored in svc. It refuses a
+// denied workdir before anything else, and maps config problems to exit
+// code 2.
+func (a *app) build(ctx context.Context, cfg config.Config, mode goferapp.Mode, svc session.Service) (*goferapp.App, error) {
 	ga, err := a.buildApp(ctx, cfg, mode, goferapp.BuildOptions{
 		AllowWrites:       a.allowWrites,
+		Sessions:          svc,
+		Version:           version,
 		ResolveCredential: a.resolveCredential,
 		NewModel:          a.newModel,
 		Limiter:           a.limiter,

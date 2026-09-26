@@ -31,10 +31,11 @@ func replApp(t *testing.T, m model.LLM, input string) (*app, chan os.Signal) {
 	return a, sigs
 }
 
-// runREPL runs the REPL to completion and fails the test on a non-zero exit.
-func runREPL(t *testing.T, a *app) (stdout, stderr string) {
+// runREPL runs the REPL with args to completion and fails the test on a
+// non-zero exit.
+func runREPL(t *testing.T, a *app, args ...string) (stdout, stderr string) {
 	t.Helper()
-	stdout, stderr, code := execute(t, a)
+	stdout, stderr, code := execute(t, a, args...)
 	if code != exitOK {
 		t.Fatalf("exit code = %d, stderr = %q", code, stderr)
 	}
@@ -178,9 +179,19 @@ func TestREPLCommands(t *testing.T) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
 		}
 	}
+	// /session before the first message, /clear with the new ID and a hint
+	// for the old one, then /session before the new session's first message.
 	ids := sessionIDRe.FindAllString(stdout, -1)
-	if len(ids) != 3 || ids[0] == ids[1] || ids[1] != ids[2] {
-		t.Errorf("session IDs printed = %v, want the first, then a new one twice", ids)
+	if len(ids) != 4 || ids[0] == ids[1] || ids[2] != ids[0] || ids[3] != ids[1] {
+		t.Errorf("session IDs printed = %v, want the first, the new one, the first, the new one", ids)
+	}
+	for _, want := range []string{
+		ids[0] + " (saved with your first message)\n",
+		"Started a new session: " + ids[1] + "\nResume the previous one with: gofer --resume " + ids[0] + "\n",
+	} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("stdout lacks %q:\n%s", want, stdout)
+		}
 	}
 	if tr := llmtest.Transcript(m.Requests()[1]); strings.Contains(tr, "kiwi") {
 		t.Errorf("/clear kept the old session:\n%s", tr)
