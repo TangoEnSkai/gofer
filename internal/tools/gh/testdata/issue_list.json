@@ -1,0 +1,37 @@
+[
+  {
+    "author": {
+      "id": "MDQ6VXNlcjE=",
+      "is_bot": false,
+      "login": "monalisa",
+      "name": "Mona Lisa"
+    },
+    "labels": [
+      {
+        "id": "LA_1",
+        "name": "bug",
+        "description": "",
+        "color": "d73a4a"
+      }
+    ],
+    "number": 41,
+    "state": "OPEN",
+    "title": "Renderer crashes on empty widget list",
+    "updatedAt": "2026-09-20T08:00:00Z",
+    "url": "https://github.com/octo-org/widgets/issues/41"
+  },
+  {
+    "author": {
+      "id": "MDQ6VXNlcjE=",
+      "is_bot": false,
+      "login": "hubot",
+      "name": ""
+    },
+    "labels": [],
+    "number": 38,
+    "state": "OPEN",
+    "title": "Document widget export format",
+    "updatedAt": "2026-09-01T08:00:00Z",
+    "url": "https://github.com/octo-org/widgets/issues/38"
+  }
+]

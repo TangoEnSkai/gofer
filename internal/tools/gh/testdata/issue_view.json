@@ -1,0 +1,46 @@
+{
+  "author": {
+    "id": "MDQ6VXNlcjE=",
+    "is_bot": false,
+    "login": "monalisa",
+    "name": "Mona Lisa"
+  },
+  "body": "Steps to reproduce:\n\n1. Create an empty widget list.\n2. Render it.\n",
+  "comments": [
+    {
+      "id": "IC_1",
+      "author": {
+        "login": "octocat"
+      },
+      "authorAssociation": "MEMBER",
+      "body": "I can reproduce this; fix in #42.",
+      "createdAt": "2026-09-21T08:00:00Z",
+      "includesCreatedEdit": false,
+      "isMinimized": false,
+      "minimizedReason": "",
+      "reactionGroups": [],
+      "url": "https://github.com/octo-org/widgets/issues/41#issuecomment-2001",
+      "viewerDidAuthor": true
+    }
+  ],
+  "labels": [
+    {
+      "id": "LA_1",
+      "name": "bug",
+      "description": "",
+      "color": "d73a4a"
+    }
+  ],
+  "milestone": {
+    "number": 3,
+    "title": "v1.2",
+    "description": "",
+    "dueOn": null
+  },
+  "number": 41,
+  "state": "OPEN",
+  "stateReason": "",
+  "title": "Renderer crashes on empty widget list",
+  "updatedAt": "2026-09-20T08:00:00Z",
+  "url": "https://github.com/octo-org/widgets/issues/41"
+}

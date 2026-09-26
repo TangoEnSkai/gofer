@@ -1,0 +1,35 @@
+[
+  {
+    "isDraft": false,
+    "number": 42,
+    "repository": {
+      "name": "widgets",
+      "nameWithOwner": "octo-org/widgets"
+    },
+    "title": "fix: handle empty widget lists",
+    "updatedAt": "2026-09-25T14:32:09Z",
+    "url": "https://github.com/octo-org/widgets/pull/42"
+  },
+  {
+    "isDraft": true,
+    "number": 7,
+    "repository": {
+      "name": "gadgets",
+      "nameWithOwner": "octocat/gadgets"
+    },
+    "title": "feat: add gadget export",
+    "updatedAt": "2026-09-24T04:53:07Z",
+    "url": "https://github.com/octocat/gadgets/pull/7"
+  },
+  {
+    "isDraft": false,
+    "number": 1311,
+    "repository": {
+      "name": "hello-world",
+      "nameWithOwner": "octocat/hello-world"
+    },
+    "title": "docs: fix typo in README",
+    "updatedAt": "2026-08-01T09:00:00Z",
+    "url": "https://github.com/octocat/hello-world/pull/1311"
+  }
+]

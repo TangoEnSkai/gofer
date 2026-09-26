@@ -1,0 +1,37 @@
+[
+  {
+    "bucket": "pass",
+    "link": "https://github.com/octo-org/widgets/actions/runs/1/job/11",
+    "name": "lint",
+    "state": "SUCCESS",
+    "workflow": "CI"
+  },
+  {
+    "bucket": "fail",
+    "link": "https://github.com/octo-org/widgets/actions/runs/1/job/12",
+    "name": "test (macos-latest)",
+    "state": "FAILURE",
+    "workflow": "CI"
+  },
+  {
+    "bucket": "pending",
+    "link": "https://github.com/octo-org/widgets/actions/runs/1/job/13",
+    "name": "test (ubuntu-latest)",
+    "state": "IN_PROGRESS",
+    "workflow": "CI"
+  },
+  {
+    "bucket": "skipping",
+    "link": "https://github.com/octo-org/widgets/actions/runs/1/job/14",
+    "name": "deploy-preview",
+    "state": "SKIPPED",
+    "workflow": "Preview"
+  },
+  {
+    "bucket": "pass",
+    "link": "https://cla.example.com/about",
+    "name": "cla",
+    "state": "SUCCESS",
+    "workflow": ""
+  }
+]

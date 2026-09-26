@@ -1,0 +1,19 @@
+[
+  {
+    "url": "https://api.github.com/repos/octo-org/widgets/pulls/comments/3001",
+    "id": 3001,
+    "node_id": "PRRC_1",
+    "path": "render.go",
+    "line": 12,
+    "diff_hunk": "@@ -10,6 +10,9 @@ func Render(ws []Widget) {\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n+\tif ws == nil {\n+\t\treturn nil\n+\t}\n",
+    "user": {
+      "login": "monalisa",
+      "id": 3,
+      "type": "User"
+    },
+    "body": "Why is the nil check needed here?",
+    "created_at": "2026-09-24T10:00:00Z",
+    "html_url": "https://github.com/octo-org/widgets/pull/42#discussion_r3001",
+    "author_association": "MEMBER"
+  }
+]

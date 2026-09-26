@@ -1,0 +1,30 @@
+[
+  {
+    "author": {
+      "id": "MDQ6VXNlcjE=",
+      "is_bot": false,
+      "login": "octocat",
+      "name": "The Octocat"
+    },
+    "isDraft": false,
+    "number": 42,
+    "reviewDecision": "CHANGES_REQUESTED",
+    "state": "OPEN",
+    "title": "fix: handle empty widget lists",
+    "updatedAt": "2026-09-25T14:32:09Z",
+    "url": "https://github.com/octo-org/widgets/pull/42"
+  },
+  {
+    "author": {
+      "is_bot": true,
+      "login": "app/dependabot"
+    },
+    "isDraft": false,
+    "number": 40,
+    "reviewDecision": "REVIEW_REQUIRED",
+    "state": "OPEN",
+    "title": "chore(deps): bump golang.org/x/net from 0.57.0 to 0.58.0",
+    "updatedAt": "2026-09-22T17:16:21Z",
+    "url": "https://github.com/octo-org/widgets/pull/40"
+  }
+]
