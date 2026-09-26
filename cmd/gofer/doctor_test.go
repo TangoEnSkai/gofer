@@ -14,7 +14,7 @@ import (
 
 func TestDoctorOK(t *testing.T) {
 	a := testApp(t)
-	stdout, stderr, code := execute(t, a, "doctor")
+	stdout, stderr, code := runDoctor(t, a)
 	if code != 0 || stderr != "" {
 		t.Fatalf("exit code = %d, stderr = %q; want 0 and empty", code, stderr)
 	}
@@ -23,21 +23,105 @@ func TestDoctorOK(t *testing.T) {
 		"config       "+wantPath+" (not found; using defaults)",
 		"model        gemini-flash-latest",
 		"credentials  env:GEMINI_API_KEY",
+		"keychain     key found",
 		"workdir      allowed",
 		"gh           logged in",
+		"binary       "+homebrewGofer,
+		"routines     none",
 	)
+}
+
+// runDoctor runs `gofer [args] doctor` with every routine effect faked:
+// the Keychain has the key, no routines, and a stable binary.
+func runDoctor(t *testing.T, a *app, args ...string) (stdout, stderr string, code int) {
+	t.Helper()
+	return executeEnv(t, a, newRoutineFakes(t).env, append(args, "doctor")...)
+}
+
+func TestDoctorRoutines(t *testing.T) {
+	a := testApp(t)
+	f := newRoutineFakes(t)
+	if _, stderr, code := executeEnv(t, a, f.env, "routine", "add", "pr-digest", "--from-bundled"); code != 0 {
+		t.Fatalf("add: %s", stderr)
+	}
+	// A spec that is not scheduled, and an agent whose spec is gone.
+	dir := filepath.Join(os.Getenv("XDG_CONFIG_HOME"), "gofer", "routines")
+	if err := os.WriteFile(filepath.Join(dir, "later.yaml"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(f.env.launchd.AgentsDir, "dev.gofer.orphan.plist"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	stdout, _, code := executeEnv(t, a, f.env, "doctor")
+	if code != 0 {
+		t.Errorf("exit code = %d, want 0", code)
+	}
+	assertRows(t, stdout,
+		"routine      later: not scheduled",
+		"routine      orphan: installed, not loaded",
+		"routine      pr-digest: loaded, last exit 0",
+	)
+
+	// Scheduled routines cannot read GEMINI_API_KEY from the shell.
+	f.env.keychain = func(context.Context) (credentials.Credential, error) {
+		return credentials.Credential{}, credentials.ErrNotFound
+	}
+	stdout, stderr, code := executeEnv(t, a, f.env, "doctor")
+	if code != exitFailure || !strings.Contains(stderr, "routines are scheduled but the Keychain has no API key") {
+		t.Errorf("no Keychain key: exit code = %d, stderr = %q", code, stderr)
+	}
+	assertRows(t, stdout, "keychain     no key; scheduled routines need one: security add-generic-password -s gofer -a gemini -w")
+}
+
+func TestDoctorKeychainSource(t *testing.T) {
+	a := testApp(t)
+	f := newRoutineFakes(t)
+	a.resolveCredential = func(context.Context) (credentials.Credential, error) {
+		return credentials.Credential{Key: secret, Source: credentials.SourceKeychain}, nil
+	}
+	f.env.keychain = func(context.Context) (credentials.Credential, error) {
+		t.Error("doctor read the Keychain twice")
+		return credentials.Credential{}, credentials.ErrNotFound
+	}
+	stdout, _, _ := executeEnv(t, a, f.env, "doctor")
+	assertRows(t, stdout, "credentials  keychain", "keychain     key found")
+}
+
+func TestDoctorBinary(t *testing.T) {
+	tests := map[string]struct {
+		path string
+		err  error
+		want string
+	}{
+		"cellar":   {path: "/opt/homebrew/Cellar/gofer/0.1.0/bin/gofer", want: "binary       /opt/homebrew/Cellar/gofer/0.1.0/bin/gofer (warning: a versioned path"},
+		"go run":   {err: errors.New("launchd: gofer is running from /tmp/go-build1/exe/gofer, a Go build cache"), want: "binary       warning: launchd: gofer is running from /tmp/go-build1"},
+		"homebrew": {path: homebrewGofer, want: "binary       " + homebrewGofer},
+	}
+	for name, tt := range tests {
+		t.Run(name, func(t *testing.T) {
+			a := testApp(t)
+			f := newRoutineFakes(t)
+			f.env.executable = func() (string, error) { return tt.path, tt.err }
+			stdout, _, code := executeEnv(t, a, f.env, "doctor")
+			if code != 0 {
+				t.Errorf("exit code = %d, want 0 (an unstable binary is a warning)", code)
+			}
+			assertRows(t, stdout, tt.want)
+		})
+	}
 }
 
 func TestDoctorConfigAndModelOverride(t *testing.T) {
 	cfg := writeConfig(t, `model = "gemini-2.5-flash-lite"`)
 
-	stdout, _, code := execute(t, testApp(t), "--config", cfg, "doctor")
+	stdout, _, code := runDoctor(t, testApp(t), "--config", cfg)
 	if code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
 	assertRows(t, stdout, "config       "+cfg, "model        gemini-2.5-flash-lite")
 
-	stdout, _, _ = execute(t, testApp(t), "--config", cfg, "--model", "gemini-2.5-pro", "doctor")
+	stdout, _, _ = runDoctor(t, testApp(t), "--config", cfg, "--model", "gemini-2.5-pro")
 	assertRows(t, stdout, "model        gemini-2.5-pro (--model)")
 }
 
@@ -49,7 +133,7 @@ func TestDoctorNoKey(t *testing.T) {
 		Run:    func(context.Context, string, ...string) ([]byte, error) { return nil, nil },
 	}.Resolve
 
-	stdout, stderr, code := execute(t, a, "doctor")
+	stdout, stderr, code := runDoctor(t, a)
 	if code != 1 {
 		t.Errorf("exit code = %d, want 1", code)
 	}
@@ -61,7 +145,7 @@ func TestDoctorNoKey(t *testing.T) {
 
 func TestDoctorInvalidConfig(t *testing.T) {
 	cfg := writeConfig(t, "[limits]\nrequests_per_minute = -1")
-	stdout, stderr, code := execute(t, testApp(t), "--config", cfg, "doctor")
+	stdout, stderr, code := runDoctor(t, testApp(t), "--config", cfg)
 	if code != 1 || !strings.Contains(stderr, "invalid config") {
 		t.Errorf("exit code = %d, stderr = %q; want 1 and invalid config", code, stderr)
 	}
@@ -73,7 +157,7 @@ func TestDoctorDeniedWorkdir(t *testing.T) {
 	t.Chdir(dir)
 	cfg := writeConfig(t, "deny_dirs = ["+quote(dir)+"]")
 
-	stdout, _, code := execute(t, testApp(t), "--config", cfg, "doctor")
+	stdout, _, code := runDoctor(t, testApp(t), "--config", cfg)
 	if code != 0 {
 		t.Errorf("exit code = %d, want 0 (a denied workdir is reported, not fatal)", code)
 	}
@@ -92,7 +176,7 @@ func TestDoctorGh(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			a := testApp(t)
 			a.ghAuthStatus = func(context.Context) error { return tt.err }
-			stdout, _, code := execute(t, a, "doctor")
+			stdout, _, code := runDoctor(t, a)
 			if code != 0 {
 				t.Errorf("exit code = %d, want 0 (gh is optional)", code)
 			}

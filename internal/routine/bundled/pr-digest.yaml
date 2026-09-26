@@ -1,0 +1,12 @@
+# S1: a weekday-morning digest of my open pull requests across GitHub
+# (docs/toil-tasks.md). Install with: gofer routine add pr-digest --from-bundled
+name: pr-digest
+description: Morning digest of my open pull requests across GitHub
+gatherer: github.my_open_prs
+with:
+  # gh's maximum. The search lists the most recently updated PRs first, so a
+  # lower limit drops the stalest ones.
+  limit: 100
+  stale_after_days: 14
+schedule: "0 9 * * 1-5"
+notify: on-action

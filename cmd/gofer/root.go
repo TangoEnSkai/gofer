@@ -93,7 +93,7 @@ func newRootCmdFor(a *app) *cobra.Command {
 	lf.StringVar(&a.output, "output", outputText, "headless output format: text, json, or stream-json")
 	lf.BoolVar(&a.allowWrites, "allow-writes", false, "headless: register write_file, edit_file, and bash, running them without confirmation")
 
-	cmd.AddCommand(newVersionCmd(), newDoctorCmd(a))
+	cmd.AddCommand(newVersionCmd(), newDoctorCmd(a), newRoutineCmd(a))
 	return cmd
 }
 
