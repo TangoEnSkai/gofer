@@ -46,21 +46,31 @@ type Decision struct {
 	Approved bool
 }
 
+// RunOption tunes how Ask, Confirm, and ConfirmAll run the agent.
+type RunOption func(*adkagent.RunConfig)
+
+// Streaming asks the model to stream its reply. onEvent then also sees partial
+// events (Event.Partial) carrying text as it arrives; the settled event with
+// the whole reply follows them, and only settled events count in Result.
+func Streaming() RunOption {
+	return func(c *adkagent.RunConfig) { c.StreamingMode = adkagent.StreamingModeSSE }
+}
+
 // Ask runs one user turn. onEvent, if non-nil, sees every event as it arrives.
-func Ask(ctx context.Context, r *runner.Runner, userID, sessionID, prompt string, onEvent func(*session.Event)) (Result, error) {
-	return run(ctx, r, userID, sessionID, genai.NewContentFromText(prompt, genai.RoleUser), onEvent)
+func Ask(ctx context.Context, r *runner.Runner, userID, sessionID, prompt string, onEvent func(*session.Event), opts ...RunOption) (Result, error) {
+	return run(ctx, r, userID, sessionID, genai.NewContentFromText(prompt, genai.RoleUser), onEvent, opts)
 }
 
 // Confirm resumes a run paused on call, approving or rejecting the tool call
 // it guards. When a run paused on several confirmations, use ConfirmAll:
 // ADK resumes the model on the first answer it receives.
-func Confirm(ctx context.Context, r *runner.Runner, userID, sessionID string, call *genai.FunctionCall, approved bool, onEvent func(*session.Event)) (Result, error) {
-	return ConfirmAll(ctx, r, userID, sessionID, []Decision{{Call: call, Approved: approved}}, onEvent)
+func Confirm(ctx context.Context, r *runner.Runner, userID, sessionID string, call *genai.FunctionCall, approved bool, onEvent func(*session.Event), opts ...RunOption) (Result, error) {
+	return ConfirmAll(ctx, r, userID, sessionID, []Decision{{Call: call, Approved: approved}}, onEvent, opts...)
 }
 
 // ConfirmAll answers several pending confirmations in one message and resumes
 // the run.
-func ConfirmAll(ctx context.Context, r *runner.Runner, userID, sessionID string, decisions []Decision, onEvent func(*session.Event)) (Result, error) {
+func ConfirmAll(ctx context.Context, r *runner.Runner, userID, sessionID string, decisions []Decision, onEvent func(*session.Event), opts ...RunOption) (Result, error) {
 	if len(decisions) == 0 {
 		return Result{}, errors.New("agent: no confirmation decisions")
 	}
@@ -75,10 +85,10 @@ func ConfirmAll(ctx context.Context, r *runner.Runner, userID, sessionID string,
 			Response: map[string]any{"confirmed": d.Approved},
 		}})
 	}
-	return run(ctx, r, userID, sessionID, msg, onEvent)
+	return run(ctx, r, userID, sessionID, msg, onEvent, opts)
 }
 
-func run(ctx context.Context, r *runner.Runner, userID, sessionID string, msg *genai.Content, onEvent func(*session.Event)) (Result, error) {
+func run(ctx context.Context, r *runner.Runner, userID, sessionID string, msg *genai.Content, onEvent func(*session.Event), opts []RunOption) (Result, error) {
 	var res Result
 	if r == nil {
 		return res, errors.New("agent: runner is nil")
@@ -86,8 +96,12 @@ func run(ctx context.Context, r *runner.Runner, userID, sessionID string, msg *g
 	if userID == "" || sessionID == "" {
 		return res, errors.New("agent: user and session IDs are required")
 	}
+	var cfg adkagent.RunConfig
+	for _, o := range opts {
+		o(&cfg)
+	}
 	seen := make(map[string]bool) // function call IDs already counted
-	for ev, err := range r.Run(ctx, userID, sessionID, msg, adkagent.RunConfig{}) {
+	for ev, err := range r.Run(ctx, userID, sessionID, msg, cfg) {
 		if err != nil {
 			return res, err
 		}

@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"iter"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -249,5 +250,57 @@ func TestConfirmRejectsBadInput(t *testing.T) {
 	}
 	if _, err := Ask(ctx, r, user, "", "hi", nil); err == nil {
 		t.Error("empty session ID: want error")
+	}
+}
+
+// streamModel replies with chunks as partial responses when asked to stream,
+// then with the whole text, like the Gemini model.
+type streamModel struct {
+	chunks   []string
+	streamed atomic.Bool
+}
+
+func (m *streamModel) Name() string { return "stream" }
+
+func (m *streamModel) GenerateContent(_ context.Context, _ *model.LLMRequest, stream bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		if stream {
+			m.streamed.Store(true)
+			for _, c := range m.chunks {
+				if !yield(&model.LLMResponse{Content: genai.NewContentFromText(c, genai.RoleModel), Partial: true}, nil) {
+					return
+				}
+			}
+		}
+		yield(&model.LLMResponse{Content: genai.NewContentFromText(strings.Join(m.chunks, ""), genai.RoleModel), TurnComplete: true}, nil)
+	}
+}
+
+func TestAskStreaming(t *testing.T) {
+	for _, stream := range []bool{false, true} {
+		m := &streamModel{chunks: []string{"Hel", "lo."}}
+		r := newTestRunner(t, m)
+		var opts []RunOption
+		if stream {
+			opts = append(opts, Streaming())
+		}
+		var partial []string
+		res, err := Ask(context.Background(), r, user, sess, "hi", func(ev *session.Event) {
+			if ev.Partial {
+				partial = append(partial, ev.Content.Parts[0].Text)
+			}
+		}, opts...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if m.streamed.Load() != stream {
+			t.Errorf("stream=%v: model asked to stream = %v", stream, m.streamed.Load())
+		}
+		if want := map[bool]int{false: 0, true: 2}[stream]; len(partial) != want {
+			t.Errorf("stream=%v: partial events %q, want %d", stream, partial, want)
+		}
+		if res.Text != "Hello." {
+			t.Errorf("stream=%v: Text = %q, want the settled reply once", stream, res.Text)
+		}
 	}
 }
