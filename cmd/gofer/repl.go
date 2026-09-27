@@ -3,13 +3,16 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 	"sync"
 
+	"github.com/google/uuid"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/session/compaction"
 	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 
@@ -21,20 +24,31 @@ import (
 const replHelp = `Type a request and press Enter. Commands:
   /help          show this help
   /clear         start a new session
-  /session       print the session ID
+  /session       print the session ID and how to resume it
   /model [name]  print the model, or switch to name from the next turn
   /exit          quit (or press Ctrl-D)
 Ctrl-C cancels the running turn.`
 
 // interactive runs the REPL (docs/specs/cli-modes.md §4).
 func (a *app) interactive(ctx context.Context, cfg config.Config, stdout, stderr io.Writer) error {
-	ga, err := a.build(ctx, cfg, goferapp.Interactive)
+	store, err := openSessions(ctx, stderr)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	ga, err := a.build(ctx, cfg, goferapp.Interactive, store.Service)
+	if err != nil {
+		return err
+	}
+	resumed, err := a.resumeTarget(ctx, store, ga.Workdir, stderr)
 	if err != nil {
 		return err
 	}
 	sigs, stop := a.interrupts()
 	defer stop()
-	return newREPL(ga, a.stdin, stdout, stderr).run(ctx, sigs)
+	r := newREPL(ga, a.stdin, stdout, stderr)
+	r.sessionID, r.saved = resumed, resumed != ""
+	return r.run(ctx, sigs)
 }
 
 // repl is a line-based chat loop. Tool calls that need confirmation are
@@ -46,8 +60,11 @@ type repl struct {
 	errOut io.Writer
 
 	sessionID string
-	always    map[string]bool // approvalKey of calls approved for the session
-	eof       bool            // input is exhausted
+	// saved reports whether the session is in the store. A new session is
+	// saved with its first message, so that an unused one leaves no trace.
+	saved  bool
+	always map[string]bool // approvalKey of calls approved for the session
+	eof    bool            // input is exhausted
 
 	midLine  bool // out does not end with a newline
 	streamed bool // text of the current model response was printed as it streamed
@@ -71,17 +88,20 @@ func newREPL(ga *goferapp.App, in io.Reader, out, errOut io.Writer) *repl {
 // run reads and handles lines until /exit or the end of input. Interrupts
 // cancel the running turn; when idle they print a hint.
 func (r *repl) run(ctx context.Context, sigs <-chan os.Signal) error {
-	id, err := r.app.NewSession(ctx)
-	if err != nil {
-		return err
+	resumed := r.sessionID != ""
+	if !resumed {
+		r.sessionID = uuid.NewString()
 	}
-	r.sessionID = id
 
 	done := make(chan struct{})
 	defer close(done)
 	go r.handleInterrupts(sigs, done)
 
-	fmt.Fprintf(r.out, "gofer %s · %s · %s\nType /help for commands, /exit to quit.\n", version, r.app.ModelName(), r.app.Workdir)
+	fmt.Fprintf(r.out, "gofer %s · %s · %s\n", version, r.app.ModelName(), r.app.Workdir)
+	if resumed {
+		fmt.Fprintf(r.out, "Resumed session %s.\n", r.sessionID)
+	}
+	fmt.Fprintln(r.out, "Type /help for commands, /exit to quit.")
 	for !r.eof {
 		fmt.Fprint(r.out, "> ")
 		if !r.in.Scan() {
@@ -129,15 +149,18 @@ func (r *repl) command(ctx context.Context, line string) bool {
 	case "/help":
 		fmt.Fprintln(r.out, replHelp)
 	case "/clear":
-		id, err := r.app.NewSession(ctx)
-		if err != nil {
-			fmt.Fprintln(r.errOut, "error:", err)
-			break
+		prev, saved := r.sessionID, r.saved
+		r.sessionID, r.saved = uuid.NewString(), false
+		fmt.Fprintf(r.out, "Started a new session: %s\n", r.sessionID)
+		if saved {
+			fmt.Fprintf(r.out, "Resume the previous one with: gofer --resume %s\n", prev)
 		}
-		r.sessionID = id
-		fmt.Fprintf(r.out, "Started a new session: %s\n", id)
 	case "/session":
-		fmt.Fprintln(r.out, r.sessionID)
+		if r.saved {
+			fmt.Fprintf(r.out, "%s\nResume it with: gofer --resume %s\n", r.sessionID, r.sessionID)
+		} else {
+			fmt.Fprintf(r.out, "%s (saved with your first message)\n", r.sessionID)
+		}
 	case "/model":
 		if arg == "" {
 			fmt.Fprintln(r.out, r.app.ModelName())
@@ -168,7 +191,15 @@ func (r *repl) turn(ctx context.Context, prompt string) {
 		cancel()
 	}()
 
+	if !r.saved {
+		if _, err := r.app.CreateSession(ctx, r.sessionID, prompt); err != nil {
+			fmt.Fprintln(r.errOut, "error:", err)
+			return
+		}
+		r.saved = true
+	}
 	res, err := agent.Ask(ctx, r.app.Runner, goferapp.UserID, r.sessionID, prompt, r.onEvent, agent.Streaming())
+	err = r.compacted(err)
 	for err == nil && len(res.PendingConfirmations) > 0 {
 		// ADK resumes the model on the first answer it gets, so all of a
 		// turn's pending confirmations are answered in one message.
@@ -178,6 +209,7 @@ func (r *repl) turn(ctx context.Context, prompt string) {
 			break
 		}
 		res, err = agent.ConfirmAll(ctx, r.app.Runner, goferapp.UserID, r.sessionID, decisions, r.onEvent, agent.Streaming())
+		err = r.compacted(err)
 	}
 	r.endLine()
 	switch {
@@ -186,6 +218,17 @@ func (r *repl) turn(ctx context.Context, prompt string) {
 	case err != nil:
 		fmt.Fprintln(r.errOut, "error:", err)
 	}
+}
+
+// compacted reports a failed context compaction as a warning and drops it:
+// the turn itself is complete and saved, only its history was not shortened.
+func (r *repl) compacted(err error) error {
+	if errors.Is(err, compaction.ErrCompaction) {
+		r.endLine()
+		fmt.Fprintln(r.errOut, "warning:", err)
+		return nil
+	}
+	return err
 }
 
 // onEvent prints model text as it streams and tool calls as one-line

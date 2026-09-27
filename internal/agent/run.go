@@ -9,22 +9,42 @@ import (
 	adkagent "google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/session/compaction"
 	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 )
 
 // NewRunner returns a runner for a that creates sessions on first use.
 // A nil svc selects an in-memory session service.
-func NewRunner(a adkagent.Agent, svc session.Service) (*runner.Runner, error) {
+func NewRunner(a adkagent.Agent, svc session.Service, opts ...RunnerOption) (*runner.Runner, error) {
 	if svc == nil {
 		svc = session.InMemoryService()
 	}
-	return runner.New(runner.Config{
+	cfg := runner.Config{
 		AppName:           Name,
 		Agent:             a,
 		SessionService:    svc,
 		AutoCreateSession: true,
-	})
+	}
+	for _, o := range opts {
+		o(&cfg)
+	}
+	return runner.New(cfg)
+}
+
+// RunnerOption configures NewRunner.
+type RunnerOption func(*runner.Config)
+
+// WithCompaction makes the runner replace older turns with a summary every
+// interval user turns, so that long sessions keep a bounded prompt
+// (docs/spikes/adk-v2.md Q6). The agent's own model writes the summary. An
+// interval of 0 or less leaves compaction off.
+func WithCompaction(interval int) RunnerOption {
+	return func(c *runner.Config) {
+		if interval > 0 {
+			c.Compaction = &compaction.Config{CompactionInterval: interval}
+		}
+	}
 }
 
 // Result summarizes one run of the agent.

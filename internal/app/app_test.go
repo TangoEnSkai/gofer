@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -12,11 +13,13 @@ import (
 
 	"golang.org/x/time/rate"
 	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/session"
 
 	"github.com/TangoEnSkai/gofer/internal/agent"
 	"github.com/TangoEnSkai/gofer/internal/config"
 	"github.com/TangoEnSkai/gofer/internal/credentials"
 	"github.com/TangoEnSkai/gofer/internal/llmtest"
+	"github.com/TangoEnSkai/gofer/internal/sessions"
 	"github.com/TangoEnSkai/gofer/internal/tools/gh"
 )
 
@@ -279,5 +282,109 @@ func TestBuildRateLimitsModel(t *testing.T) {
 	defer cancel()
 	if _, err := agent.Ask(ctx, a.Runner, UserID, sid, "second", nil); !errors.Is(err, context.DeadlineExceeded) {
 		t.Errorf("second request within a minute: err = %v, want it to wait for the limiter", err)
+	}
+}
+
+// Compaction is on for interactive sessions only (docs/specs/cli-modes.md §6).
+func TestCompactionByMode(t *testing.T) {
+	for _, tc := range []struct {
+		mode        Mode
+		allowWrites bool
+		want        int
+	}{
+		{Interactive, false, InteractiveCompactionInterval},
+		{Headless, false, 0},
+		{Headless, true, 0},
+		{Routine, false, 0},
+	} {
+		opts := options(t, t.TempDir(), llmtest.New(), nil)
+		opts.AllowWrites = tc.allowWrites
+		a, err := Build(context.Background(), config.Default(), tc.mode, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if a.CompactionInterval != tc.want {
+			t.Errorf("%v (allowWrites=%v): CompactionInterval = %d, want %d", tc.mode, tc.allowWrites, a.CompactionInterval, tc.want)
+		}
+	}
+	if InteractiveCompactionInterval != 10 {
+		t.Errorf("InteractiveCompactionInterval = %d, want 10 (spec §6)", InteractiveCompactionInterval)
+	}
+}
+
+// A session records its symlink-resolved workdir, mode, gofer version, and
+// first message.
+func TestCreateSessionState(t *testing.T) {
+	real, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(t.TempDir(), "link")
+	if err := os.Symlink(real, link); err != nil {
+		t.Fatal(err)
+	}
+	opts := options(t, link, llmtest.New(), nil)
+	opts.Version = "v1.2.3"
+	a, err := Build(context.Background(), config.Default(), Interactive, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	for _, id := range []string{"", "chosen-id"} {
+		sid, err := a.CreateSession(ctx, id, "fix the build")
+		if err != nil || sid == "" || (id != "" && sid != id) {
+			t.Fatalf("CreateSession(%q) = %q, %v", id, sid, err)
+		}
+		resp, err := a.Sessions.Get(ctx, &session.GetRequest{AppName: agent.Name, UserID: UserID, SessionID: sid})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := map[string]any{
+			sessions.KeyWorkdir:      real,
+			sessions.KeyMode:         "interactive",
+			sessions.KeyVersion:      "v1.2.3",
+			sessions.KeyFirstMessage: "fix the build",
+		}
+		if got := maps.Collect(resp.Session.State().All()); !maps.Equal(got, want) {
+			t.Errorf("state = %v, want %v", got, want)
+		}
+	}
+}
+
+// A session in the SQLite store survives a restart: an app built later on
+// the same file continues it with the earlier turns.
+func TestSessionSurvivesRestart(t *testing.T) {
+	dir, path := t.TempDir(), filepath.Join(t.TempDir(), "sessions.db")
+	ctx := context.Background()
+	start := func(m model.LLM) *App {
+		store, err := sessions.Open(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { store.Close() })
+		opts := options(t, dir, m, nil)
+		opts.Sessions = store.Service
+		a, err := Build(ctx, config.Default(), Headless, opts)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return a
+	}
+
+	first := start(llmtest.New(llmtest.Text("Noted: kiwi.")))
+	sid, err := first.CreateSession(ctx, "", "the codeword is kiwi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := agent.Ask(ctx, first.Runner, UserID, sid, "the codeword is kiwi", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	m := llmtest.New(llmtest.Text("kiwi"))
+	if _, err := agent.Ask(ctx, start(m).Runner, UserID, sid, "what was it?", nil); err != nil {
+		t.Fatal(err)
+	}
+	if tr := llmtest.Transcript(m.Requests()[0]); !strings.Contains(tr, "the codeword is kiwi") || !strings.Contains(tr, "Noted: kiwi.") {
+		t.Errorf("resumed request lacks the earlier turn:\n%s", tr)
 	}
 }
