@@ -85,7 +85,7 @@ func parseParams(with map[string]any) (params, error) {
 		var err error
 		switch k {
 		case paramLimit:
-			p.limit, err = intParam(k, with[k], 1, gh.MaxLimit)
+			p.limit, err = intParam(k, with[k], 1, gh.MaxSearchLimit)
 		case paramStaleAfterDays:
 			p.staleAfterDays, err = intParam(k, with[k], 1, maxStaleAfterDays)
 		default:

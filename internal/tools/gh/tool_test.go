@@ -263,3 +263,13 @@ func TestToolThroughAgent(t *testing.T) {
 		t.Errorf("final text = %q", final)
 	}
 }
+
+func TestToolClampsSearchLimit(t *testing.T) {
+	c, f := newFake([]byte("[]"), nil)
+	if _, err := c.call(context.Background(), Args{Operation: OpSearchMyOpenPRs, Limit: 500}); err != nil {
+		t.Fatal(err)
+	}
+	if args := f.Calls()[0]; !slices.Contains(args, "--limit=100") {
+		t.Errorf("tool did not clamp the search limit to MaxLimit: %q", args)
+	}
+}
