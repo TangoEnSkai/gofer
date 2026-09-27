@@ -4,19 +4,21 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 )
 
 // installHint tells the user how to get a binary launchd can keep running.
 const installHint = "install it with `go install github.com/TangoEnSkai/gofer/cmd/gofer@latest` and run the installed gofer"
 
-// StableExecutable returns the absolute, symlink-resolved path of the running
-// gofer binary, for Job.Executable. It refuses a binary in a Go build cache or
-// a temporary directory (go run, go test), which would vanish and leave the
-// agent pointing at nothing.
+// StableExecutable returns the path of the running gofer binary for
+// Job.Executable: absolute and as invoked, with symlinks kept. Homebrew's
+// /opt/homebrew/bin/gofer is a symlink into a versioned Cellar directory; the
+// symlink survives `brew upgrade`, the Cellar path does not.
 //
-// A package manager may resolve to a versioned path (for example a Homebrew
-// Cellar directory) that changes on upgrade; re-adding the routine fixes that.
+// The symlink-resolved path is used only to refuse a binary in a Go build
+// cache or a temporary directory (go run, go test), which would vanish and
+// leave the agent pointing at nothing.
 func StableExecutable() (string, error) {
 	return stableExecutable(os.Executable, os.TempDir())
 }
@@ -27,16 +29,25 @@ func stableExecutable(executable func() (string, error), tempDir string) (string
 	if err != nil {
 		return "", fmt.Errorf("launchd: locate gofer binary: %w", err)
 	}
-	if path, err = filepath.EvalSymlinks(path); err != nil {
-		return "", fmt.Errorf("launchd: locate gofer binary: %w", err)
-	}
 	if path, err = filepath.Abs(path); err != nil {
 		return "", fmt.Errorf("launchd: locate gofer binary: %w", err)
 	}
-	if reason := unstableReason(path, tempDir); reason != "" {
-		return "", fmt.Errorf("launchd: gofer is running from %s, %s; %s", path, reason, installHint)
+	resolved, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return "", fmt.Errorf("launchd: locate gofer binary: %w", err)
+	}
+	if reason := unstableReason(resolved, tempDir); reason != "" {
+		return "", fmt.Errorf("launchd: gofer is running from %s, %s; %s", resolved, reason, installHint)
 	}
 	return path, nil
+}
+
+// VersionedPath reports whether path lies in a versioned package directory,
+// such as a Homebrew Cellar, that the next upgrade removes. A job pointing
+// there works until then; run gofer through the package manager's symlink
+// (for example /opt/homebrew/bin/gofer) instead.
+func VersionedPath(path string) bool {
+	return slices.Contains(strings.Split(filepath.ToSlash(path), "/"), "Cellar")
 }
 
 // unstableReason explains why path is not a stable place for a binary, or

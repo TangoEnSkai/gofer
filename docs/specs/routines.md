@@ -32,7 +32,7 @@ Location: `$XDG_CONFIG_HOME/gofer/routines/<name>.yaml` (default
 installed with `gofer routine add <name>`.
 
 ```yaml
-name: pr-digest                 # [a-z0-9-]+, unique
+name: pr-digest                 # ^[a-z0-9][a-z0-9-]*$, unique
 description: Morning digest of my open PRs
 gatherer: github.my_open_prs    # registered Go gatherer (ADR-0007)
 with:                           # gatherer parameters, validated by the gatherer
@@ -64,7 +64,9 @@ type Pipeline struct {
 	Last         workflow.Node     // output: string (judge prompt)
 	Instruction  string            // judge system instruction
 	OutputSchema *genai.Schema     // judge must answer in this shape
-	Render       func(judged json.RawMessage, gathered any) (Digest, error)
+	// Render is a closure over the run's gathered data (Build is called
+	// once per run), so it only takes the judge's answer.
+	Render       func(judged json.RawMessage) (Digest, error)
 }
 ```
 
@@ -110,8 +112,9 @@ The runner appends `AgentNode(judge)` after `Last` and runs the workflow via
 ## 4. Rate limiting (#22)
 
 - Gemini model built with `genai.HTTPOptions.RetryOptions` (spike Q5 finding).
-- `ratelimit.Wrap(llm, rpm)` — token bucket (`golang.org/x/time/rate`),
-  `Limits.RequestsPerMinute` from config (default 10; revisit after #28).
+- `ratelimit.Wrap(llm, limiter)` — token bucket (`golang.org/x/time/rate`)
+  from `ratelimit.NewLimiter(Limits.RequestsPerMinute)` (config default 10;
+  revisit after #28).
 - The limiter is shared process-wide, so parallel judges (future) and
   interactive use cannot exceed it together.
 
@@ -122,8 +125,10 @@ The runner appends `AgentNode(judge)` after `Last` and runs the workflow via
   `launchctl bootstrap gui/$UID <plist>`. `remove` → `bootout` + delete.
   `list` → specs + loaded state + last run.
 - Plist:
-  - `ProgramArguments`: absolute, symlink-resolved path of the running gofer
-    binary + `routine run <name>`. Refuse when the binary lives in a temp/build
+  - `ProgramArguments`: absolute path of the running gofer binary as invoked,
+    symlinks kept (Homebrew's `/opt/homebrew/bin/gofer` survives `brew
+    upgrade`; the Cellar path it points to does not) + `routine run <name>`.
+    The symlink-resolved path is only used to refuse a binary in a temp/build
     cache dir (`go run`), with a hint to `go install`.
   - `StartCalendarInterval`: cron subset → array of dicts. Supported: numbers,
     `*`, lists `a,b`, ranges `a-b`; `*/n` steps expanded. Other syntax is a
@@ -138,9 +143,11 @@ The runner appends `AgentNode(judge)` after `Last` and runs the workflow via
 ## 6. Run history & notifications (#24)
 
 - Directory: `~/.local/state/gofer/runs/<name>/`
-  - `<RFC3339-ts>.md` — rendered digest
-  - `<RFC3339-ts>.json` — run record: status, duration, model, token usage,
+  - `<run-id>.md` — rendered digest
+  - `<run-id>.json` — run record: status, duration, model, token usage,
     item counts per category, per-item errors, gofer version
+  - The run ID is the UTC start time as `20260926T090000Z` (no colons, so it
+    is a safe file name), with a `-N` suffix if that second is taken.
   - `latest.md` — copy of the newest digest
 - Keep the newest 60 runs per routine.
 - `gofer routine logs <name> [-n 5]`, `gofer routine show <name>` (prints `latest.md`).

@@ -42,9 +42,11 @@ func TestUnstableReason(t *testing.T) {
 	}
 }
 
-func TestStableExecutableResolvesSymlinks(t *testing.T) {
-	target, err := filepath.EvalSymlinks("/bin/ls")
-	if err != nil {
+// The plist gets the path as invoked, so a Homebrew symlink such as
+// /opt/homebrew/bin/gofer keeps working after `brew upgrade` moves the Cellar
+// directory it points to.
+func TestStableExecutableKeepsSymlinks(t *testing.T) {
+	if _, err := filepath.EvalSymlinks("/bin/ls"); err != nil {
 		t.Skip("no /bin/ls to link to")
 	}
 	link := filepath.Join(t.TempDir(), "gofer")
@@ -55,8 +57,44 @@ func TestStableExecutableResolvesSymlinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("stableExecutable: %v", err)
 	}
-	if got != target {
-		t.Errorf("stableExecutable = %q, want %q", got, target)
+	if got != link {
+		t.Errorf("stableExecutable = %q, want the unresolved %q", got, link)
+	}
+}
+
+// Only the resolved path decides whether the binary is stable: a symlink to
+// a go run build is refused, wherever the symlink lives.
+func TestStableExecutableChecksResolvedPath(t *testing.T) {
+	dir := t.TempDir()
+	build := filepath.Join(dir, "go-build123", "b001", "exe")
+	if err := os.MkdirAll(build, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	exe := filepath.Join(build, "gofer")
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "gofer")
+	if err := os.Symlink(exe, link); err != nil {
+		t.Fatal(err)
+	}
+	_, err := stableExecutable(func() (string, error) { return link, nil }, "/nonexistent-tmp")
+	if err == nil || !strings.Contains(err.Error(), "Go build cache") {
+		t.Errorf("stableExecutable(%q) error = %v, want a Go build cache refusal", link, err)
+	}
+}
+
+func TestVersionedPath(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/opt/homebrew/Cellar/gofer/0.1.0/bin/gofer": true,
+		"/usr/local/Cellar/gofer/0.1.0/bin/gofer":    true,
+		"/opt/homebrew/bin/gofer":                    false,
+		"/Users/me/go/bin/gofer":                     false,
+		"/Users/me/Cellars/gofer":                    false,
+	} {
+		if got := VersionedPath(path); got != want {
+			t.Errorf("VersionedPath(%q) = %v, want %v", path, got, want)
+		}
 	}
 }
 
