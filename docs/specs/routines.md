@@ -36,7 +36,7 @@ name: pr-digest                 # ^[a-z0-9][a-z0-9-]*$, unique
 description: Morning digest of my open PRs
 gatherer: github.my_open_prs    # registered Go gatherer (ADR-0007)
 with:                           # gatherer parameters, validated by the gatherer
-  limit: 50
+  limit: 300                    # max 1000; newest first, so a low limit drops the stalest PRs
   stale_after_days: 14
 schedule: "0 9 * * 1-5"         # 5-field cron subset, local time
 model: gemini-flash-latest      # optional override

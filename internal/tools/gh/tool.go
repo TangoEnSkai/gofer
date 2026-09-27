@@ -93,7 +93,8 @@ func (c *Client) call(ctx context.Context, a Args) (Result, error) {
 	)
 	switch a.Operation {
 	case OpSearchMyOpenPRs:
-		data, err = c.SearchMyOpenPRs(ctx, a.Limit)
+		// The tool keeps the smaller cap so its output stays bounded.
+		data, err = c.SearchMyOpenPRs(ctx, ClampLimit(a.Limit))
 	case OpPRView:
 		data, err = c.PRView(ctx, a.Repo, a.Number)
 	case OpPRChecks:

@@ -429,6 +429,7 @@ func TestValidate(t *testing.T) {
 		nil,
 		{"limit": 1},
 		{"limit": 100, "stale_after_days": 365},
+		{"limit": 300},
 		{"limit": int64(50)},
 		{"stale_after_days": uint64(7)},
 	}
@@ -442,9 +443,9 @@ func TestValidate(t *testing.T) {
 		`limit must be an integer, got float64 50.5`:        {"limit": 50.5},
 		`limit must be an integer, got bool true`:           {"limit": true},
 		`limit must be an integer, got <nil>`:               {"limit": nil},
-		`limit must be between 1 and 100, got 0`:            {"limit": 0},
-		`limit must be between 1 and 100, got 101`:          {"limit": 101},
-		`limit must be between 1 and 100, got 18446744073`:  {"limit": uint64(18446744073)},
+		`limit must be between 1 and 1000, got 0`:           {"limit": 0},
+		`limit must be between 1 and 1000, got 1001`:        {"limit": 1001},
+		`limit must be between 1 and 1000, got 18446744073`: {"limit": uint64(18446744073)},
 		`stale_after_days must be between 1 and 365, got 0`: {"stale_after_days": 0},
 		`unknown parameter "repo"`:                          {"repo": "x"},
 	}

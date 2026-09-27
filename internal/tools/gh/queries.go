@@ -13,8 +13,13 @@ import (
 const (
 	// DefaultLimit is used when a list query is given a limit <= 0.
 	DefaultLimit = 30
-	// MaxLimit is the largest limit any list query accepts.
+	// MaxLimit is the largest limit any list query accepts, and the cap the
+	// model-facing tool applies to every operation.
 	MaxLimit = 100
+	// MaxSearchLimit is the largest limit SearchMyOpenPRs accepts when called
+	// from Go (routine gather steps). GitHub search returns at most 1000
+	// results.
+	MaxSearchLimit = 1000
 
 	maxBody     = 1000 // bytes of a PR or issue body kept
 	maxComment  = 600  // bytes of a comment or review body kept
@@ -114,11 +119,16 @@ type IssueDetail struct {
 }
 
 // SearchMyOpenPRs lists open pull requests authored by the authenticated
-// user across GitHub, most recently updated first.
+// user across GitHub, most recently updated first. limit is clamped to
+// [1, MaxSearchLimit]; the tool clamps it to MaxLimit before calling.
 func (c *Client) SearchMyOpenPRs(ctx context.Context, limit int) ([]PR, error) {
 	var raw []ghPR
+	n := min(max(limit, 0), MaxSearchLimit)
+	if n == 0 {
+		n = DefaultLimit
+	}
 	err := c.json(ctx, &raw, "search", "prs", "--author=@me", "--state=open",
-		"--sort=updated", "--order=desc", limitFlag(limit), "--json="+searchPRFields)
+		"--sort=updated", "--order=desc", "--limit="+strconv.Itoa(n), "--json="+searchPRFields)
 	if err != nil {
 		return nil, err
 	}

@@ -189,7 +189,7 @@ func (r *run) render(judged json.RawMessage) (routine.Digest, error) {
 		// The search is sorted by last update, so the cut PRs are the
 		// likeliest to go stale.
 		note = fmt.Sprintf("Only the %d most recently updated open pull requests were checked; older ones were skipped. Raise `with.%s` (max %d) in the routine spec.",
-			len(prs), paramLimit, gh.MaxLimit)
+			len(prs), paramLimit, gh.MaxSearchLimit)
 	}
 	d.Markdown = markdown(date, d.Headline, note, groups, d.ItemErrors)
 	return d, nil

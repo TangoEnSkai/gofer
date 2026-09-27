@@ -100,12 +100,16 @@ func TestClampLimit(t *testing.T) {
 			t.Errorf("ClampLimit(%d) = %d, want %d", in, got, want)
 		}
 	}
-	c, f := newFake([]byte("[]"), nil)
-	if _, err := c.SearchMyOpenPRs(context.Background(), 500); err != nil {
-		t.Fatal(err)
-	}
-	if args := f.Calls()[0]; !slices.Contains(args, "--limit=100") {
-		t.Errorf("limit 500 not clamped: %q", args)
+	// SearchMyOpenPRs is also called from Go gather steps, which may ask for
+	// more than the tool's MaxLimit, up to GitHub search's ceiling.
+	for in, want := range map[int]string{0: "--limit=30", 500: "--limit=500", 5000: "--limit=1000"} {
+		c, f := newFake([]byte("[]"), nil)
+		if _, err := c.SearchMyOpenPRs(context.Background(), in); err != nil {
+			t.Fatal(err)
+		}
+		if args := f.Calls()[0]; !slices.Contains(args, want) {
+			t.Errorf("SearchMyOpenPRs(%d) args %q lack %s", in, args, want)
+		}
 	}
 }
 
